@@ -71,24 +71,17 @@ with st.sidebar:
     if st.button("Save Connection"):
         st.session_state.connection_string = connection_string
         st.success("Connection saved!")
+# Detect database type and modify MySQL connection string to use pymysql
+def preprocess_connection_string(connection_string):
+    if connection_string.startswith("mysql://"):
+        return connection_string.replace("mysql://", "mysql+pymysql://")
+    return connection_string
 
-# Determine database type
-def detect_db_type(connection_string):
-    if connection_string.startswith("sqlite"):
-        return "sqlite"
-    elif "mysql" in connection_string:
-        return "mysql"
-    return "unknown"
-
-if "mysql" in connection_string:
-    connection_string = connection_string.replace("mysql://", "mysql+pymysql://")
-engine = create_engine(connection_string)
-
-
-# Database schema functions
+# Function to get the database schema
 def get_db_schema(connection_string):
     try:
-        engine = create_engine(connection_string)
+        processed_connection_string = preprocess_connection_string(connection_string)
+        engine = create_engine(processed_connection_string)
         inspector = inspect(engine)
         schema = {}
         for table_name in inspector.get_table_names():
@@ -97,6 +90,8 @@ def get_db_schema(connection_string):
         return schema
     except Exception as e:
         return f"Error connecting to database: {str(e)}"
+
+
 
 # AI functions
 def generate_sql(natural_query, schema, db_type):
@@ -120,10 +115,11 @@ def generate_sql(natural_query, schema, db_type):
     sql_query_match = re.search(r"```sql\n(.*?)\n```", sql_response, re.DOTALL)
     return sql_query_match.group(1).strip() if sql_query_match else sql_response
 
-# Execute SQL
+# Function to execute the SQL query
 def execute_sql(connection_string, sql_query):
     try:
-        engine = create_engine(connection_string)
+        processed_connection_string = preprocess_connection_string(connection_string)
+        engine = create_engine(processed_connection_string)
         with engine.connect() as connection:
             return pd.read_sql(sql_query, connection)
     except Exception as e:
@@ -154,7 +150,7 @@ if prompt := st.chat_input("Ask your database question..."):
         st.markdown(f'<div class="user-message">{prompt}</div>', unsafe_allow_html=True)
         
         try:
-            db_type = detect_db_type(st.session_state.connection_string)
+            db_type = preprocess_connection_string(st.session_state.connection_string)
             schema = get_db_schema(st.session_state.connection_string)
             sql_query = generate_sql(prompt, schema, db_type)
             results = execute_sql(st.session_state.connection_string, sql_query)
