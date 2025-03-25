@@ -72,6 +72,14 @@ with st.sidebar:
         st.session_state.connection_string = connection_string
         st.success("Connection saved!")
 
+# Determine database type
+def detect_db_type(connection_string):
+    if connection_string.startswith("sqlite"):
+        return "sqlite"
+    elif "mysql" in connection_string:
+        return "mysql"
+    return "unknown"
+
 # Database schema functions
 def get_db_schema(connection_string):
     try:
@@ -86,17 +94,13 @@ def get_db_schema(connection_string):
         return f"Error connecting to database: {str(e)}"
 
 # AI functions
-def generate_sql(natural_query, schema):
+def generate_sql(natural_query, schema, db_type):
     system_prompt = f"""
-    You are an expert SQL generator. Generate a valid SQL query for an SQLite database based on the schema:
+    You are an expert SQL generator. Generate a valid SQL query based on the schema:
     {json.dumps(schema, indent=2)}
-
+    
     Rules:
-    - Use `DATE('now', '-1 month')` instead of `DATE_SUB(CURDATE(), INTERVAL 1 MONTH)`.
-    - Use `strftime('%Y-%m-%d', 'now', '-1 month')` if date formatting is needed.
-    - Avoid using unsupported MySQL functions.
-    - Only return the SQL query without explanations, comments, or Markdown formatting.
-    - Ensure the query is syntactically correct for SQLite databases.
+    - Ensure the query is syntactically correct for {db_type.upper()} databases.
     """
     
     response = together.chat.completions.create(
@@ -108,16 +112,10 @@ def generate_sql(natural_query, schema):
     )
     
     sql_response = response.choices[0].message.content.strip()
-
-    # Extract SQL query if wrapped in ```sql ... ```
     sql_query_match = re.search(r"```sql\n(.*?)\n```", sql_response, re.DOTALL)
-    if sql_query_match:
-        sql_query = sql_query_match.group(1).strip()
-    else:
-        sql_query = sql_response  # Assume the response is raw SQL if no markdown
+    return sql_query_match.group(1).strip() if sql_query_match else sql_response
 
-    return sql_query
-
+# Execute SQL
 def execute_sql(connection_string, sql_query):
     try:
         engine = create_engine(connection_string)
@@ -126,6 +124,7 @@ def execute_sql(connection_string, sql_query):
     except Exception as e:
         return f"Error executing query: {str(e)}"
 
+# Summarize results
 def summarize_results(results):
     response = together.chat.completions.create(
         model="meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
@@ -146,21 +145,15 @@ if prompt := st.chat_input("Ask your database question..."):
     if not st.session_state.connection_string:
         st.error("Please save a valid connection string first")
     else:
-        # Add user message
         st.session_state.messages.append({"role": "user", "content": prompt})
         st.markdown(f'<div class="user-message">{prompt}</div>', unsafe_allow_html=True)
         
         try:
-            # Generate and display SQL
+            db_type = detect_db_type(st.session_state.connection_string)
             schema = get_db_schema(st.session_state.connection_string)
-            sql_query = generate_sql(prompt, schema)
-            
-            # Add SQL response
-            st.session_state.messages.append({"role": "assistant", "content": " "})
-            st.markdown(f'<div class="assistant-message"></div>', unsafe_allow_html=True)
-            
-            # Execute and summarize
+            sql_query = generate_sql(prompt, schema, db_type)
             results = execute_sql(st.session_state.connection_string, sql_query)
+            
             if isinstance(results, pd.DataFrame):
                 summary = summarize_results(results)
                 st.session_state.messages.append({"role": "assistant", "content": summary})
@@ -173,5 +166,6 @@ if prompt := st.chat_input("Ask your database question..."):
             error_msg = f"Error processing request: {str(e)}"
             st.session_state.messages.append({"role": "assistant", "content": error_msg})
             st.markdown(f'<div class="assistant-message">{error_msg}</div>', unsafe_allow_html=True)
+
 
 #sqlite:///D:/Sarvesh/walmart_sales_2.db
