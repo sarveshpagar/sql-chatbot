@@ -80,6 +80,11 @@ def detect_db_type(connection_string):
         return "mysql"
     return "unknown"
 
+if "mysql" in connection_string:
+    connection_string = connection_string.replace("mysql://", "mysql+pymysql://")
+engine = create_engine(connection_string)
+
+
 # Database schema functions
 def get_db_schema(connection_string):
     try:
