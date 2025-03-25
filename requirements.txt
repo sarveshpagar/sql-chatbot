@@ -5,4 +5,3 @@ together
 python-dotenv
 psycopg2-binary  # For PostgreSQL (optional, needed if using PostgreSQL)
 mysql-connector-python  # For MySQL (optional, needed if using MySQL)
-sqlite 
